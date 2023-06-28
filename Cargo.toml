@@ -7,3 +7,4 @@ edition = "2021"
 
 [dependencies]
 oci-spec = "0.6.1"
+sha2 = "0.10.7"
