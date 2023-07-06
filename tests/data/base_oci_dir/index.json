@@ -1,0 +1,1 @@
+{"schemaVersion":2,"manifests":[{"mediaType":"application/vnd.oci.image.manifest.v1+json","digest":"sha256:9df4fb4f86c7d3ff71e0e483c41b947cdb472b907ede9c4c208af4cdf523ccea","size":348,"annotations":{"org.opencontainers.image.ref.name":"docker.io/library/busybox:latest"}}]}

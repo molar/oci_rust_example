@@ -2,11 +2,14 @@ use oci_spec::image::{
     ConfigBuilder, Descriptor, DescriptorBuilder, ImageConfiguration, ImageConfigurationBuilder,
     ImageIndex, ImageIndexBuilder, ImageManifest, ImageManifestBuilder, MediaType, SCHEMA_VERSION,
 };
+use oci_spec::Result;
 use sha2::{Digest, Sha256};
-use std::fs;
+use std::borrow::BorrowMut;
+use std::collections::HashMap;
 use std::io::prelude::*;
 use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
+use std::{fs, iter};
 
 fn sha256_digest<R: Read>(mut reader: R) -> std::io::Result<(String, usize)> {
     let mut buffer = [0; 1024];
@@ -60,6 +63,14 @@ pub fn get_blob_from_digest(digest: &String) -> Option<&str> {
     digest.split(":").last()
 }
 
+pub fn get_file_from_descriptor(root_dir: &Path, desc: &Descriptor) -> Option<PathBuf> {
+    Some(
+        root_dir
+            .join("blobs/sha256")
+            .join(get_blob_from_digest(desc.digest())?),
+    )
+}
+
 pub struct OciDir {
     pub base: PathBuf,
     pub blob_dir: PathBuf,
@@ -78,11 +89,7 @@ impl OciDir {
     }
 
     pub fn get_descriptor_file(&self, desc: &Descriptor) -> Option<PathBuf> {
-        if let Some(digest_name) = get_blob_from_digest(desc.digest()) {
-            Some(self.blob_dir.join(digest_name))
-        } else {
-            None
-        }
+        get_file_from_descriptor(&self.base, desc)
     }
 
     fn write_descriptor(&self, desc: &Descriptor, data: String) {
@@ -91,6 +98,80 @@ impl OciDir {
             file.write_all(data.as_bytes()).unwrap();
         }
         ()
+    }
+
+    pub fn add_base_oci_dir(&self, p: &Path) -> ImageIndex {
+        let index = ImageIndex::from_file(p.join("index.json")).unwrap();
+        index.to_file_pretty(self.base.join("index.json")).unwrap();
+
+        let blobs_to_link: Vec<Descriptor> = index
+            .manifests()
+            .iter()
+            .filter_map(|man| {
+                if let Ok(image) =
+                    ImageManifest::from_file(get_file_from_descriptor(p, man).unwrap())
+                {
+                    Some(image.layers().clone())
+                } else {
+                    None
+                }
+            })
+            .flatten()
+            .collect();
+        for blob in blobs_to_link {
+            let blob_name = get_blob_from_digest(blob.digest()).unwrap();
+            let blob_path = p.join("blobs/sha256").join(blob_name);
+            let src = fs::canonicalize(blob_path).unwrap();
+            let dst = self.blob_dir.join(blob_name);
+            symlink(src, dst).unwrap();
+        }
+
+        let blobs_to_copy: Vec<Descriptor> = index
+            .manifests()
+            .iter()
+            .filter_map(|m| match m.media_type() {
+                MediaType::ImageManifest => Some(vec![
+                    m.clone(),
+                    ImageManifest::from_file(get_file_from_descriptor(p, m).unwrap())
+                        .unwrap()
+                        .config()
+                        .clone(),
+                ]),
+                _ => None,
+            })
+            .flatten()
+            .collect();
+        for blob in blobs_to_copy {
+            let blob_name = get_blob_from_digest(blob.digest()).unwrap();
+            let blob_path = p.join("blobs/sha256").join(blob_name);
+            let src = fs::canonicalize(blob_path).unwrap();
+            let dst = self.blob_dir.join(blob_name);
+            fs::copy(src, dst).unwrap();
+        }
+
+        index
+    }
+
+    pub fn set_image_tag(&self, image: &ImageManifest, tag: &str) {
+        // write the image to the dir, get the descriptor and add
+        // it to the index
+        let (mut desc, blob) = get_descriptor(&DescriptorLike::Image { 0: &image });
+        let mut annotations: HashMap<String, String> = HashMap::new();
+        annotations.insert(
+            String::from("org.opencontainers.image.ref.name"),
+            String::from(tag),
+        );
+        desc.set_annotations(Some(annotations));
+        self.write_descriptor(&desc, blob);
+
+        if let Ok(mut index) = ImageIndex::from_file(self.base.join("index.json")) {
+            let mut manifests = index.manifests().clone();
+            manifests.clear();
+            manifests.push(desc);
+            index.set_manifests(manifests);
+
+            index.to_file(self.base.join("index.json")).unwrap();
+        }
     }
 
     pub fn add_image(&self, layers: Vec<Descriptor>) -> ImageManifest {
@@ -112,6 +193,13 @@ impl OciDir {
 
         let (descriptor, datablob) = get_descriptor(&DescriptorLike::Image { 0: &image });
         self.write_descriptor(&descriptor, datablob);
+        if let Ok(mut index) = ImageIndex::from_file(self.base.join("index.json")) {
+            let mut manifests = index.manifests().clone();
+            manifests.push(descriptor);
+            index.set_manifests(manifests);
+
+            index.to_file(self.base.join("index.json")).unwrap();
+        }
         image
     }
 
