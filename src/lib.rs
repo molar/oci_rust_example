@@ -2,14 +2,12 @@ use oci_spec::image::{
     ConfigBuilder, Descriptor, DescriptorBuilder, ImageConfiguration, ImageConfigurationBuilder,
     ImageIndex, ImageIndexBuilder, ImageManifest, ImageManifestBuilder, MediaType, SCHEMA_VERSION,
 };
-use oci_spec::Result;
 use sha2::{Digest, Sha256};
-use std::borrow::BorrowMut;
 use std::collections::HashMap;
+use std::fs;
 use std::io::prelude::*;
 use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
-use std::{fs, iter};
 
 fn sha256_digest<R: Read>(mut reader: R) -> std::io::Result<(String, usize)> {
     let mut buffer = [0; 1024];
@@ -92,7 +90,7 @@ impl OciDir {
         get_file_from_descriptor(&self.base, desc)
     }
 
-    fn write_descriptor(&self, desc: &Descriptor, data: String) {
+    pub fn write_descriptor(&self, desc: &Descriptor, data: String) {
         if let Some(digest_name) = desc.digest().split(":").last() {
             let mut file = fs::File::create(self.blob_dir.join(digest_name)).unwrap();
             file.write_all(data.as_bytes()).unwrap();

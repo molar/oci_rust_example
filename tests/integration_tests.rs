@@ -103,7 +103,7 @@ fn it_makes_oci_image_from_base() {
 
 #[test]
 fn it_works() {
-    remove_dir_all("temp/oci_dir").unwrap();
+    remove_dir_all("temp/oci_dir").ok();
     let oci_dir = liboci::make_oci_dir("temp/oci_dir").unwrap();
 
     let base_dir = PathBuf::from("tests/data/base_oci_dir");
