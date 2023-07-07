@@ -4,19 +4,20 @@ use clap::{arg, ArgAction, Command};
 use liboci::{get_descriptor, make_layers_from_tars, DescriptorLike};
 use oci_spec::image::{Arch, ImageConfiguration, ImageManifest};
 
+mod utils;
 // mutate "base" --tag oci:registry/{ctx.attr.name}
 // --platform=
 // --append={layer}
 // --output=
+// --env-file=ctx.attr.envfile
+// --labels-file=ctx.attr.labels
+// --annotations-file=ctx.attr.annotations
+// --user=ctx.attr.user
 //
 fn main() {
     // --entrypoint ctx.attr.entrypoint joined with ,
     // --cmd  ctx.attr.cmd joined with ,
-    // --user=ctx.attr.user
     // --workdir=ctx.attr.workdir
-    // --env-file=ctx.attr.envfile
-    // --labels-file=ctx.attr.labels
-    // --annotations-file=ctx.attr.annotations
     let main_matches = Command::new("podman_bzl").subcommand(
         Command::new("mutate")
             .version("1.0")
@@ -29,6 +30,10 @@ fn main() {
             .arg(arg!(--output <VALUE>).required(true))
             .arg(arg!(--append <VALUE>).action(ArgAction::Append))
             .arg(arg!(--platform <VALUE>))
+            .arg(arg!(--"env-file" <VALUE>))
+            .arg(arg!(--"annotations-file" <VALUE>))
+            .arg(arg!(--"labels-file" <VALUE>))
+            .arg(arg!(--user <VALUE>))
     ).get_matches();
     match main_matches.subcommand() {
         Some(("mutate", matches)) => {
@@ -41,6 +46,9 @@ fn main() {
                 .map(|v| v.as_str())
                 .collect::<Vec<_>>();
             let _platform = matches.get_one::<String>("platform");
+            let _env_file = matches.get_one::<String>("env-file");
+            let _annotations_file = matches.get_one::<String>("annotations-file");
+            let _labels_file = matches.get_one::<String>("labels-file");
 
             println!("Making oci dir at {}", _oci_dir);
             if let Ok(oci_dir) = liboci::make_oci_dir(_oci_dir) {
@@ -67,7 +75,7 @@ fn main() {
                     .get_descriptor_file(existing_image.config())
                     .unwrap();
                 let mut image_config = ImageConfiguration::from_file(config_fd).unwrap();
-                let new_config = image_config.config().clone().unwrap();
+                let mut new_config = image_config.config().clone().unwrap();
                 if let Some(platform) = _platform {
                     let arch = match platform.as_str() {
                         "x86_64" => Arch::Amd64,
@@ -77,7 +85,37 @@ fn main() {
                     println!("Writing platform {:?}", arch);
                     image_config.set_architecture(arch);
                 }
-                //new_config.env()
+                if let Some(env_file) = _env_file {
+                    let env = utils::read_kv_file(&PathBuf::from(env_file)).unwrap();
+                    let mut env_vec: Vec<String> = Vec::<String>::new();
+                    if let Some(existing_env) = new_config.env() {
+                        existing_env.iter().for_each(|e| env_vec.push(e.clone()));
+                    }
+                    env_vec.extend(env.iter().map(|m| format!("{}={}", m.0, m.1)));
+
+                    new_config.set_env(Some(env_vec));
+                }
+                if let Some(labels_file) = _labels_file {
+                    let labels = utils::read_kv_file(&PathBuf::from(labels_file)).unwrap();
+                    if let Some(existing_labels) = new_config.labels_mut() {
+                        existing_labels.extend(labels);
+                    } else {
+                        new_config.set_labels(Some(labels));
+                    }
+                }
+                if let Some(annotations_file) = _annotations_file {
+                    let annotations =
+                        utils::read_kv_file(&PathBuf::from(annotations_file)).unwrap();
+                    if let Some(image_annotations) = existing_image.annotations_mut() {
+                        image_annotations.extend(annotations);
+                    } else {
+                        existing_image.set_annotations(Some(annotations));
+                    }
+                }
+
+                if let Some(user) = matches.get_one::<String>("user") {
+                    new_config.set_user(Some(user.clone()));
+                }
 
                 image_config.set_config(Some(new_config));
 

@@ -59,7 +59,7 @@ fn it_makes_oci_image() {
     );
 
     let image_index = oci_dir.add_image_index(vec![image.clone()]);
-    let (image_index_descriptor, blob) =
+    let (image_index_descriptor, _blob) =
         get_descriptor(&DescriptorLike::ImageIndex { 0: &image_index });
 
     let image_index_read_path = oci_dir
