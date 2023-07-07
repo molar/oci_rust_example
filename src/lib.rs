@@ -4,12 +4,31 @@ use oci_spec::image::{
 };
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
-use std::fs;
 use std::io::prelude::*;
 use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
+use std::{fs, result};
 
-fn sha256_digest<R: Read>(mut reader: R) -> std::io::Result<(String, usize)> {
+#[derive(Debug)]
+pub enum Error {
+    IOError(std::io::Error),
+    OciSpecError(oci_spec::OciSpecError),
+}
+
+impl std::convert::From<std::io::Error> for Error {
+    fn from(err: std::io::Error) -> Self {
+        Error::IOError(err)
+    }
+}
+impl std::convert::From<oci_spec::OciSpecError> for Error {
+    fn from(err: oci_spec::OciSpecError) -> Self {
+        Error::OciSpecError(err)
+    }
+}
+
+pub type Result<T> = result::Result<T, Error>;
+
+fn sha256_digest<R: Read>(mut reader: R) -> Result<(String, usize)> {
     let mut buffer = [0; 1024];
     let mut hasher = Sha256::new();
     let mut len: usize = 0;
@@ -20,7 +39,7 @@ fn sha256_digest<R: Read>(mut reader: R) -> std::io::Result<(String, usize)> {
             break;
         }
         hasher.update(&buffer[..count]);
-        len = len + count;
+        len += count;
     }
 
     Ok((format!("{:x}", hasher.finalize()), len))
@@ -32,33 +51,33 @@ pub enum DescriptorLike<'a> {
     ImageIndex(&'a ImageIndex),
 }
 
-fn get_descriptor_raw(t: MediaType, bytes: String) -> (Descriptor, String) {
-    let (sha, size) = sha256_digest(bytes.as_bytes()).unwrap();
+fn get_descriptor_raw(t: MediaType, bytes: String) -> Result<(Descriptor, String)> {
+    let (sha, size) = sha256_digest(bytes.as_bytes())?;
 
-    (
+    Ok((
         Descriptor::new(t, size as i64, format!("sha256:{}", sha)),
         bytes,
-    )
+    ))
 }
 
-pub fn get_descriptor(mig: &DescriptorLike) -> (Descriptor, String) {
+pub fn get_descriptor(mig: &DescriptorLike) -> Result<(Descriptor, String)> {
     match *mig {
         DescriptorLike::Image(desc) => {
-            let data_str = desc.to_string_pretty().unwrap();
+            let data_str = desc.to_string_pretty()?;
             get_descriptor_raw(MediaType::ImageManifest, data_str)
         }
         DescriptorLike::Config(desc) => {
-            let data_str = desc.to_string_pretty().unwrap();
+            let data_str = desc.to_string_pretty()?;
             get_descriptor_raw(MediaType::ImageConfig, data_str)
         }
         DescriptorLike::ImageIndex(desc) => {
-            let data_str = desc.to_string_pretty().unwrap();
+            let data_str = desc.to_string_pretty()?;
             get_descriptor_raw(MediaType::ImageIndex, data_str)
         }
     }
 }
-pub fn get_blob_from_digest(digest: &String) -> Option<&str> {
-    digest.split(":").last()
+pub fn get_blob_from_digest(digest: &str) -> Option<&str> {
+    digest.split(':').last()
 }
 
 pub fn get_file_from_descriptor(root_dir: &Path, desc: &Descriptor) -> Option<PathBuf> {
@@ -75,15 +94,11 @@ pub struct OciDir {
 }
 
 impl OciDir {
-    pub fn link_descriptor(&self, desc: &Descriptor, realpath: &Path) {
+    pub fn link_descriptor(&self, desc: &Descriptor, realpath: &Path) -> Result<()> {
         if let Some(digest_name) = get_blob_from_digest(desc.digest()) {
-            symlink(
-                fs::canonicalize(&realpath).unwrap(),
-                self.blob_dir.join(digest_name),
-            )
-            .unwrap();
+            symlink(fs::canonicalize(realpath)?, self.blob_dir.join(digest_name))?;
         }
-        ()
+        Ok(())
     }
 
     pub fn get_descriptor_file(&self, desc: &Descriptor) -> Option<PathBuf> {
@@ -91,11 +106,10 @@ impl OciDir {
     }
 
     pub fn write_descriptor(&self, desc: &Descriptor, data: String) {
-        if let Some(digest_name) = desc.digest().split(":").last() {
+        if let Some(digest_name) = desc.digest().split(':').last() {
             let mut file = fs::File::create(self.blob_dir.join(digest_name)).unwrap();
             file.write_all(data.as_bytes()).unwrap();
         }
-        ()
     }
 
     pub fn add_base_oci_dir(&self, p: &Path) -> ImageIndex {
@@ -153,7 +167,7 @@ impl OciDir {
     pub fn set_image_tag(&self, image: &ImageManifest, tag: &str) {
         // write the image to the dir, get the descriptor and add
         // it to the index
-        let (mut desc, blob) = get_descriptor(&DescriptorLike::Image { 0: &image });
+        let (mut desc, blob) = get_descriptor(&DescriptorLike::Image(image)).unwrap();
         let mut annotations: HashMap<String, String> = HashMap::new();
         annotations.insert(
             String::from("org.opencontainers.image.ref.name"),
@@ -179,7 +193,7 @@ impl OciDir {
             .build()
             .unwrap();
 
-        let (cds, blob) = get_descriptor(&DescriptorLike::Config { 0: &config });
+        let (cds, blob) = get_descriptor(&DescriptorLike::Config(&config)).unwrap();
         self.write_descriptor(&cds, blob);
 
         let image = ImageManifestBuilder::default()
@@ -189,7 +203,7 @@ impl OciDir {
             .build()
             .unwrap();
 
-        let (descriptor, datablob) = get_descriptor(&DescriptorLike::Image { 0: &image });
+        let (descriptor, datablob) = get_descriptor(&DescriptorLike::Image(&image)).unwrap();
         self.write_descriptor(&descriptor, datablob);
         if let Ok(mut index) = ImageIndex::from_file(self.base.join("index.json")) {
             let mut manifests = index.manifests().clone();
@@ -204,7 +218,7 @@ impl OciDir {
     pub fn add_image_index(&self, images: Vec<ImageManifest>) -> ImageIndex {
         let image_descriptors: Vec<Descriptor> = images
             .iter()
-            .map(|im| get_descriptor(&DescriptorLike::Image { 0: &im }).0)
+            .map(|im| get_descriptor(&DescriptorLike::Image(im)).unwrap().0)
             .collect();
         let image_index = ImageIndexBuilder::default()
             .schema_version(SCHEMA_VERSION)
@@ -213,7 +227,7 @@ impl OciDir {
             .unwrap();
 
         let (image_index_descriptor, image_index_blob) =
-            get_descriptor(&DescriptorLike::ImageIndex { 0: &image_index });
+            get_descriptor(&DescriptorLike::ImageIndex(&image_index)).unwrap();
 
         self.write_descriptor(&image_index_descriptor, image_index_blob);
 
@@ -221,19 +235,18 @@ impl OciDir {
     }
 }
 
-pub fn make_oci_dir(name: &str) -> std::io::Result<OciDir> {
+pub fn make_oci_dir(name: &str) -> Result<OciDir> {
     fs::create_dir_all(name)?;
     let base = PathBuf::from(name);
     let blob_dir: PathBuf = [name, "blobs", "sha256"].iter().collect();
     fs::create_dir_all(&blob_dir)?;
     let oci_layout_file: PathBuf = [name, "oci-layout"].iter().collect();
     let mut file = fs::File::create(oci_layout_file)?;
-    file.write_all(b"{\"imageLayoutVersion\":\"1.0.0\"}")
-        .expect("Failed to write image layout file");
+    file.write_all(b"{\"imageLayoutVersion\":\"1.0.0\"}")?;
     Ok(OciDir { base, blob_dir })
 }
 
-pub fn make_layers_from_tars(tars: Vec<PathBuf>) -> std::io::Result<Vec<(Descriptor, PathBuf)>> {
+pub fn make_layers_from_tars(tars: Vec<PathBuf>) -> Result<Vec<(Descriptor, PathBuf)>> {
     Ok(tars
         .iter()
         .map(|t| {

@@ -1,9 +1,6 @@
 use liboci::{self, get_descriptor, DescriptorLike};
 use oci_spec::image::{ImageIndex, ImageManifest};
-use std::{
-    fs::remove_dir_all,
-    path::{Path, PathBuf},
-};
+use std::{fs::remove_dir_all, path::PathBuf};
 use tempdir::TempDir;
 
 #[test]
@@ -40,7 +37,7 @@ fn it_makes_oci_image() {
     ];
     let info = liboci::make_layers_from_tars(tars).expect("asdf");
     info.iter().for_each(|m| {
-        oci_dir.link_descriptor(&m.0, &m.1);
+        oci_dir.link_descriptor(&m.0, &m.1).unwrap();
     });
 
     assert!(oci_dir
@@ -60,7 +57,7 @@ fn it_makes_oci_image() {
 
     let image_index = oci_dir.add_image_index(vec![image.clone()]);
     let (image_index_descriptor, _blob) =
-        get_descriptor(&DescriptorLike::ImageIndex { 0: &image_index });
+        get_descriptor(&DescriptorLike::ImageIndex { 0: &image_index }).unwrap();
 
     let image_index_read_path = oci_dir
         .get_descriptor_file(&image_index_descriptor)
@@ -101,6 +98,11 @@ fn it_makes_oci_image_from_base() {
     );
 }
 
+/// .
+///
+/// # Panics
+///
+/// Panics if .
 #[test]
 fn it_works() {
     remove_dir_all("temp/oci_dir").ok();
@@ -127,7 +129,7 @@ fn it_works() {
     ];
     let info = liboci::make_layers_from_tars(tars).expect("asdf");
     info.iter().for_each(|m| {
-        oci_dir.link_descriptor(&m.0, &m.1);
+        oci_dir.link_descriptor(&m.0, &m.1).unwrap();
         busybox_img.layers_mut().push(m.0.clone());
     });
 

@@ -54,7 +54,7 @@ fn main() {
             if let Ok(oci_dir) = liboci::make_oci_dir(_oci_dir) {
                 println!("Adding base from {}", _base);
                 let index = oci_dir.add_base_oci_dir(&PathBuf::from(_base));
-                let layers = _layers.iter().map(|m| PathBuf::from(m)).collect();
+                let layers = _layers.iter().map(PathBuf::from).collect();
                 println!("Adding layers  {:?}", layers);
                 let tar_layers = make_layers_from_tars(layers).unwrap();
 
@@ -66,7 +66,7 @@ fn main() {
                 .unwrap();
 
                 tar_layers.iter().for_each(|m| {
-                    oci_dir.link_descriptor(&m.0, &m.1);
+                    oci_dir.link_descriptor(&m.0, &m.1).unwrap();
                     existing_image.layers_mut().push(m.0.clone());
                 });
 
@@ -121,7 +121,7 @@ fn main() {
 
                 //write the new config
                 let (descriptor, datablob) =
-                    get_descriptor(&DescriptorLike::Config { 0: &image_config });
+                    get_descriptor(&DescriptorLike::Config(&image_config)).unwrap();
                 oci_dir.write_descriptor(&descriptor, datablob);
 
                 existing_image.set_config(descriptor);
