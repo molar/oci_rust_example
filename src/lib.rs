@@ -7,22 +7,16 @@ use std::io::prelude::*;
 use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
 use std::{fs, result};
+use thiserror::Error;
 
-#[derive(Debug)]
+#[derive(Error, Debug)]
 pub enum Error {
-    IOError(std::io::Error),
-    OciSpecError(oci_spec::OciSpecError),
-}
-
-impl std::convert::From<std::io::Error> for Error {
-    fn from(err: std::io::Error) -> Self {
-        Error::IOError(err)
-    }
-}
-impl std::convert::From<oci_spec::OciSpecError> for Error {
-    fn from(err: oci_spec::OciSpecError) -> Self {
-        Error::OciSpecError(err)
-    }
+    #[error("Input/Output Error")]
+    IOError(#[from] std::io::Error),
+    #[error("Invalid oci")]
+    OciSpecError(#[from] oci_spec::OciSpecError),
+    #[error("Unknown oci lib error")]
+    Unknown,
 }
 
 pub type Result<T> = result::Result<T, Error>;

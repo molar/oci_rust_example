@@ -79,8 +79,9 @@ fn main() {
                 if let Some(platform) = _platform {
                     let arch = match platform.as_str() {
                         "x86_64" => Arch::Amd64,
+                        "amd64" => Arch::Amd64,
                         "aarch64" => Arch::ARM64,
-                        _ => Arch::Amd64,
+                        str => panic!("Dont know arch {}", str),
                     };
                     println!("Writing platform {:?}", arch);
                     image_config.set_architecture(arch);

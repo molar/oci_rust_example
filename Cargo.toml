@@ -18,3 +18,4 @@ clap = { version = "4.3.9", features = ["derive"] }
 oci-spec = "0.6.1"
 sha2 = "0.10.7"
 tempdir = "0.3.7"
+thiserror = "1.0"

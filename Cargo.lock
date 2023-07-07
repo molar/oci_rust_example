@@ -356,6 +356,7 @@ dependencies = [
  "oci-spec",
  "sha2",
  "tempdir",
+ "thiserror",
 ]
 
 [[package]]
