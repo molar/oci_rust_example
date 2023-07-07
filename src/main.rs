@@ -127,7 +127,7 @@ fn main() {
                 existing_image.set_config(descriptor);
 
                 //read and mutate the busybox image
-                oci_dir.set_image_tag(&existing_image, _tag);
+                oci_dir.set_image(&existing_image);
             }
         }
         _ => println!("Dont know what to do"),

@@ -3,7 +3,6 @@ use oci_spec::image::{
     ImageIndex, ImageIndexBuilder, ImageManifest, ImageManifestBuilder, MediaType, SCHEMA_VERSION,
 };
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
 use std::io::prelude::*;
 use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
@@ -164,16 +163,10 @@ impl OciDir {
         index
     }
 
-    pub fn set_image_tag(&self, image: &ImageManifest, tag: &str) {
+    pub fn set_image(&self, image: &ImageManifest) {
         // write the image to the dir, get the descriptor and add
         // it to the index
-        let (mut desc, blob) = get_descriptor(&DescriptorLike::Image(image)).unwrap();
-        let mut annotations: HashMap<String, String> = HashMap::new();
-        annotations.insert(
-            String::from("org.opencontainers.image.ref.name"),
-            String::from(tag),
-        );
-        desc.set_annotations(Some(annotations));
+        let (desc, blob) = get_descriptor(&DescriptorLike::Image(image)).unwrap();
         self.write_descriptor(&desc, blob);
 
         if let Ok(mut index) = ImageIndex::from_file(self.base.join("index.json")) {

@@ -55,9 +55,9 @@ fn it_makes_oci_image() {
         "sha256:bc894e1d83f844c4d0d01a17a04850d1b0f7e75cc3ead16660f3c15be58f6623"
     );
 
-    let image_index = oci_dir.add_image_index(vec![image.clone()]);
+    let image_index = oci_dir.add_image_index(vec![image]);
     let (image_index_descriptor, _blob) =
-        get_descriptor(&DescriptorLike::ImageIndex { 0: &image_index }).unwrap();
+        get_descriptor(&DescriptorLike::ImageIndex(&image_index)).unwrap();
 
     let image_index_read_path = oci_dir
         .get_descriptor_file(&image_index_descriptor)
@@ -134,5 +134,5 @@ fn it_works() {
     });
 
     //read and mutate the busybox image
-    oci_dir.set_image_tag(&busybox_img, "asdfasdf");
+    oci_dir.set_image(&busybox_img);
 }
