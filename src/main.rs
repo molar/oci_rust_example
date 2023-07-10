@@ -80,14 +80,7 @@ fn main() {
                 let mut image_config = ImageConfiguration::from_file(config_fd).unwrap();
                 let mut new_config = image_config.config().clone().unwrap();
                 if let Some(platform) = _platform {
-                    let arch = match platform.as_str() {
-                        "x86_64" => Arch::Amd64,
-                        "amd64" => Arch::Amd64,
-                        "aarch64" => Arch::ARM64,
-                        str => panic!("Dont know arch {}", str),
-                    };
-                    println!("Writing platform {:?}", arch);
-                    image_config.set_architecture(arch);
+                    image_config.set_architecture(Arch::from(platform.as_str()));
                 }
                 if let Some(env_file) = _env_file {
                     let env = utils::read_kv_file(&PathBuf::from(env_file)).unwrap();
