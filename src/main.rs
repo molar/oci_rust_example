@@ -13,11 +13,11 @@ mod utils;
 // --labels-file=ctx.attr.labels
 // --annotations-file=ctx.attr.annotations
 // --user=ctx.attr.user
+// --entrypoint ctx.attr.entrypoint joined with ,
+// --cmd  ctx.attr.cmd joined with ,
+// --workdir=ctx.attr.workdir
 //
 fn main() {
-    // --entrypoint ctx.attr.entrypoint joined with ,
-    // --cmd  ctx.attr.cmd joined with ,
-    // --workdir=ctx.attr.workdir
     let main_matches = Command::new("podman_bzl").subcommand(
         Command::new("mutate")
             .version("1.0")
@@ -34,6 +34,9 @@ fn main() {
             .arg(arg!(--"annotations-file" <VALUE>))
             .arg(arg!(--"labels-file" <VALUE>))
             .arg(arg!(--user <VALUE>))
+            .arg(arg!(--entrypoint <VALUE>))
+            .arg(arg!(--cmd <VALUE>))
+            .arg(arg!(--workdir <VALUE>))
     ).get_matches();
     match main_matches.subcommand() {
         Some(("mutate", matches)) => {
@@ -116,6 +119,21 @@ fn main() {
 
                 if let Some(user) = matches.get_one::<String>("user") {
                     new_config.set_user(Some(user.clone()));
+                }
+
+                if let Some(entrypoint) = matches.get_one::<String>("entrypoint") {
+                    let entry_point_split: Vec<String> =
+                        entrypoint.split(',').map(String::from).collect();
+                    new_config.set_entrypoint(Some(entry_point_split));
+                }
+
+                if let Some(cmd) = matches.get_one::<String>("cmd") {
+                    let cmd_split: Vec<String> = cmd.split(',').map(String::from).collect();
+                    new_config.set_cmd(Some(cmd_split));
+                }
+
+                if let Some(workdir) = matches.get_one::<String>("workdir") {
+                    new_config.set_working_dir(Some(workdir.clone()));
                 }
 
                 image_config.set_config(Some(new_config));
